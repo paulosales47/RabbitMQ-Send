@@ -9,10 +9,8 @@ public class Send {
         using(var connection = factory.CreateConnection())
         using(var channel = connection.CreateModel())
         {
-            var properties = channel.CreateBasicProperties();
-            properties.Persistent = true;
-
-            channel.QueueDeclare(queue: "task_queue", durable: true, exclusive: false, autoDelete: false, arguments: null);
+            
+            channel.ExchangeDeclare(exchange: "logs", type: ExchangeType.Fanout);
 
             for(int i = 0; i < 10; i++){
                 string dots = new string('.', new Random().Next(1, 5));
@@ -20,8 +18,8 @@ public class Send {
                 var body = Encoding.UTF8.GetBytes(message);
 
                 channel.BasicPublish(
-                    exchange: "",
-                    routingKey: "task_queue",
+                    exchange: "logs",
+                    routingKey: "",
                     basicProperties: null,
                     body: body
                 );
