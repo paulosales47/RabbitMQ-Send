@@ -10,26 +10,37 @@ public class Send {
         using(var channel = connection.CreateModel())
         {
             
-            channel.ExchangeDeclare(exchange: "logs", type: ExchangeType.Fanout);
+            channel.ExchangeDeclare(exchange: "direct_logs", type: ExchangeType.Direct);
 
             for(int i = 0; i < 10; i++){
-                string dots = new string('.', new Random().Next(1, 5));
-                string message = $"{i}º Hello{dots}";
+                string message = $"{i}º Hello";
+                string severity = gererateSeverity();
                 var body = Encoding.UTF8.GetBytes(message);
 
                 channel.BasicPublish(
-                    exchange: "logs",
-                    routingKey: "",
+                    exchange: "direct_logs",
+                    routingKey: severity,
                     basicProperties: null,
                     body: body
                 );
 
-                System.Console.WriteLine("[x] Sent {0}", message);
+                System.Console.WriteLine("[x] Sent '{0}': '{1}'", message, severity);
             }
         }
 
         Console.WriteLine("Press [enter] to exit");
         Console.ReadLine();
+    }
+
+    public static string gererateSeverity(){
+        int typeMessage = new Random().Next(1, 4);
+
+        if(typeMessage == 1)
+            return "error";
+        else if(typeMessage == 2)
+            return "warning";
+        
+        return "info";
     }
 
 }
