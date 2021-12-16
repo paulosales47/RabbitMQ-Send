@@ -1,59 +1,72 @@
 ﻿using System;
 using RabbitMQ.Client;
 using System.Text;
+using RabbitMQ.Client.Events;
+using System.Collections.Concurrent;
 
 public class Send {
-    public static void Main(string[] args)
+
+    private readonly IConnection? _connection;
+    private readonly IModel? _channel;
+    private readonly string? _replayQueueName;
+    private readonly EventingBasicConsumer? _consumer;
+    private readonly BlockingCollection<string> _respQueue = new BlockingCollection<string>();
+    private readonly IBasicProperties? _props;
+    
+
+    public Send()
     {
-        if(args.Length < 1)
-            return;
-
         var factory = new ConnectionFactory() {HostName = "localhost"};
-        using(var connection = factory.CreateConnection())
-        using(var channel = connection.CreateModel())
-        {
-            
-            channel.ExchangeDeclare(exchange: "topic_logs", type: ExchangeType.Topic);
+        _connection = factory.CreateConnection();
+        _channel = _connection.CreateModel();
+        _replayQueueName = _channel.QueueDeclare().QueueName;
+        _consumer = new EventingBasicConsumer(_channel);
 
-            for(int i = 0; i < 50; i++){
-                string message = $"{i}º Hello";
-                string topic = gererateSeverity(args[new Random().Next(0, args.Length)]);
-                var body = Encoding.UTF8.GetBytes(message);
+        _props = _channel.CreateBasicProperties();
+        var correlationId = Guid.NewGuid().ToString();
+        _props.CorrelationId = correlationId;
+        _props.ReplyTo = _replayQueueName;
 
-                channel.BasicPublish(
-                    exchange: "topic_logs",
-                    routingKey: topic,
-                    basicProperties: null,
-                    body: body
-                );
-
-                System.Console.WriteLine("[x] Sent '{0}': '{1}'", message, topic);
+        _consumer.Received += (model, ea) => {
+            var body = ea.Body.ToArray();
+            var response = Encoding.UTF8.GetString(body);
+            if(ea.BasicProperties.CorrelationId == correlationId){
+                _respQueue.Add(response);
             }
-        }
+        };
+
+        _channel.BasicConsume(consumer: _consumer, queue: _replayQueueName, autoAck: true);
+
 
         Console.WriteLine("Press [enter] to exit");
         Console.ReadLine();
     }
 
-    public static string gererateSeverity(string facility){
-        int typeMessage = new Random().Next(1, 9);
+    public string Call(string message){
 
-        if(typeMessage == 1)
-            return $"{facility}.emerg";
-        else if(typeMessage == 2)
-            return $"{facility}.alert";
-        else if(typeMessage == 3)
-            return $"{facility}.crit";
-        else if(typeMessage == 4)
-            return $"{facility}.err";
-        else if(typeMessage == 5)
-            return $"{facility}.warn";
-        else if(typeMessage == 6)
-            return $"{facility}.notice";
-        else if(typeMessage == 7)
-            return $"{facility}.info";
-        
-        return $"{facility}.debug";
+        var messageBytes = Encoding.UTF8.GetBytes(message);
+        _channel.BasicPublish(exchange: "", routingKey: "rpc_queue", basicProperties: _props, body: messageBytes);
+
+        return _respQueue.Take();
+    }
+
+    public void Close() => _connection!.Close();
+
+}
+
+public class Rpc{
+
+    public static void Main(string[] args){
+        var send = new Send();
+
+        foreach(string arg in args){
+            Console.WriteLine("[x] Requesting fib({0})", arg);
+            var response = send.Call(arg);
+            Console.WriteLine("[.] Got {0}", response);
+        }
+
+        send.Close();
+
     }
 
 }
